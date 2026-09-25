@@ -1,6 +1,6 @@
 # Sterling Software Centre
 
-Portable software management for Sterling Tech engineers on the current Windows PC. This is the **local-mode release, v0.1.1**, built with .NET 10 and WPF. The optional agent/controller system described in the project brief is **not implemented in this release**. No network listener or Windows service is installed.
+Portable software management for IT engineers / MSP on the current Windows PC. This is the **local-mode release, v0.1.1**, built with .NET 10 and WPF. The optional agent/controller system described in the project brief is **not implemented in this release**. No network listener or Windows service is installed.
 
 ## Download and run
 
