@@ -17,29 +17,41 @@ public partial class MainWindow : Window
     readonly Settings settings;
     readonly List<IPackageProvider> providers;
     readonly JobEngine engine;
+    readonly BookmarkRecipe recipe;
     readonly string settingsFile = Path.Combine(Storage.Home, "settings.json");
     readonly string logFile = Path.Combine(Storage.Home, "logs", DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".log");
     readonly AppUpdates appUpdates = new();
     AppRelease? availableRelease;
     CancellationTokenSource? jobStop;
     bool busy, updateClosing;
-    public MainWindow()
+    public MainWindow() : this(null, null, null, null) { }
+    public MainWindow(Settings? testSettings, List<IPackageProvider>? testProviders, BookmarkRecipe? testRecipe, string? testState)
     {
         InitializeComponent();
+        ReviewGrid.RowHeight = double.NaN;
         Directory.CreateDirectory(Path.GetDirectoryName(logFile)!);
-        try { settings = File.Exists(settingsFile) ? Storage.Load<Settings>(settingsFile) : new(); }
+        try { settings = testSettings ?? (File.Exists(settingsFile) ? Storage.Load<Settings>(settingsFile) : new()); }
         catch (Exception ex) { settings = new(); Log("Settings could not be loaded: " + ex.Message); }
-        providers = [new WingetProvider(new ProcessRunner(), settings), new ChocolateyProvider(new ProcessRunner(), settings)];
-        engine = new(providers, Log);
+        providers = testProviders ?? [new WingetProvider(new ProcessRunner(), settings), new ChocolateyProvider(new ProcessRunner(), settings)];
+        recipe = testRecipe ?? new BookmarkRecipe(ChromeRoot, () => Process.GetProcessesByName("chrome").Length > 0);
+        engine = new(providers, Log, testState, recipe);
         BasketGrid.ItemsSource = basket; InventoryGrid.ItemsSource = inventory; RestoreGrid.ItemsSource = restored; JobsGrid.ItemsSource = jobs;
         basket.CollectionChanged += (_, _) => { if (!busy) StatusText.Text = basket.Count + " packages selected for deployment"; };
         BasketScope.ItemsSource = RestoreScope.ItemsSource = new[] { "unknown", "user", "machine" };
         BasketPolicy.ItemsSource = RestorePolicy.ItemsSource = new[] { "Newest", "Captured" };
+        DetailPolicy.ItemsSource = new[] { "Newest", "Captured" };
+        DataProfileBox.ItemsSource = new[] { "Default" }.Concat(Directory.Exists(ChromeRoot) ? Directory.GetDirectories(ChromeRoot).Select(Path.GetFileName).Where(n => n != null && System.Text.RegularExpressions.Regex.IsMatch(n, @"^Profile [0-9]+$"))! : []).Distinct().ToList();
         ChocoSourceBox.Text = settings.ChocolateySource; AgreementBox.IsChecked = settings.AcceptSourceAgreements; AppUpdateBox.IsChecked = settings.CheckAppUpdates;
         VersionLabel.Text = "v" + CurrentVersion.ToString(3) + "  ·  WINDOWS x64";
         Subtitle.Text = Environment.MachineName + "  /  " + Environment.UserName + "  /  LOCAL WORKSPACE";
         Closing += (_, e) => { if (busy && !updateClosing) { e.Cancel = true; StatusText.Text = "Operation running. Use Stop after current package before closing."; } };
-        if (!App.SmokeMode) Loaded += async (_, _) => await Guard(async () => { await Detect(); LoadPreviousJob(); if (settings.CheckAppUpdates) { try { await CheckAppUpdate(); } catch (Exception ex) { Log("App update check: " + ex.Message); } } });
+    }
+    public async Task InitializeAsync(Action<string> status)
+    {
+        status("Detecting package providers…"); await Detect();
+        status("Loading previous job and local policy…"); LoadPreviousJob();
+        if (settings.CheckAppUpdates) { status("Checking Sterling release information…"); try { await CheckAppUpdate(); } catch (Exception ex) { AppUpdateStatus.Text = "Update check unavailable: " + ex.Message; Log(ex.Message); } }
+        status("Your workspace is ready");
     }
     static Version CurrentVersion => Assembly.GetExecutingAssembly().GetName().Version!;
     async Task Guard(Func<Task> action)
@@ -93,31 +105,18 @@ public partial class MainWindow : Window
     void ClearBasket_Click(object s, RoutedEventArgs e) { if (busy) return; basket.Clear(); SyncSearch(); }
     void SyncSearch() { if (SearchGrid.ItemsSource is IEnumerable<Package> rows) foreach (var p in rows.ToList()) p.Selected = basket.Any(x => x.Provider == p.Provider && x.Id == p.Id); }
     void CommitEdits() { foreach (var grid in new[] { BasketGrid, InventoryGrid, RestoreGrid, SearchGrid }) { grid.CommitEdit(DataGridEditingUnit.Cell, true); grid.CommitEdit(DataGridEditingUnit.Row, true); } }
-    bool Confirm(string text) => MessageBox.Show(this, text, "Sterling Software Centre · review action", MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK;
-    async Task StartJob(IEnumerable<Package> packages, string operation)
-    {
-        CommitEdits(); var chosen = packages.Select(p => p.Copy()).DistinctBy(p => p.Key).ToList();
-        if (chosen.Count == 0) throw new InvalidOperationException("No eligible packages selected.");
-        foreach (var p in chosen) { Rules.Validate(p); p.Excluded |= settings.Exclusions.Contains(p.Provider + ":" + p.Id); if (p.Excluded) throw new InvalidOperationException(p.Id + " is excluded. Review its policy first."); }
-        string warning = operation is "uninstall" or "replace" ? "Uninstalling may remove settings or application data and affect licence activation. Replacement is not an automatic rollback. Back up application data first." : "You authorise these changes and accept the package licence agreements. Installers may request UAC elevation. Sterling does not request a restart.";
-        if (!Confirm(operation.ToUpperInvariant() + " " + chosen.Count + " package(s):\n\n" + string.Join("\n", chosen.Take(15).Select(p => p.Provider + " / " + p.Id + " [" + p.Scope + ", " + p.VersionPolicy + "]")) + "\n\n" + warning)) return;
-        jobs.Clear(); foreach (var p in chosen) jobs.Add(new JobItem { Package = p, Operation = operation }); Tabs.SelectedIndex = 3; await RunJob();
-    }
+    Task StartJob(IEnumerable<Package> packages, string operation) { CommitEdits(); return PrepareReview(ReviewBuilder.Jobs(packages, operation)); }
     async Task RunJob()
     {
+        foreach (var item in jobs) item.PropertyChanged += (_, _) => UpdateJobProgress();
+        UpdateJobProgress();
         jobStop?.Dispose(); jobStop = new(); StatusText.Text = "Running sequential package job. Other packages continue after a failure.";
         await engine.Run(jobs, jobStop.Token);
+        UpdateJobProgress();
         StatusText.Text = $"Job finished · {jobs.Count(j => j.Status == "Succeeded")} succeeded · {jobs.Count(j => j.Status == "Skipped")} skipped · {jobs.Count(j => j.Status == "Failed")} failed · {jobs.Count(j => j.Status == "Needs review")} need review" + (jobs.Any(j => j.RestartRequired) ? " · Restart required" : "");
     }
     async void Install_Click(object s, RoutedEventArgs e) => await Guard(() => StartJob(basket, "install"));
-    async void Retry_Click(object s, RoutedEventArgs e) => await Guard(async () =>
-    {
-        if (!jobs.Any(j => j.Status == "Failed")) throw new InvalidOperationException("No failed items to retry.");
-        if (!Confirm("Retry failed items only? Failed replacements may already have uninstalled the previous version.")) return;
-        foreach (var item in jobs.Where(j => j.Status == "Failed")) item.Package.Excluded = settings.Exclusions.Contains(item.Package.Provider + ":" + item.Package.Id);
-        foreach (var item in jobs.Where(j => j.Status == "Cancelled")) item.Status = "Not retried";
-        await RunJob();
-    });
+    async void Retry_Click(object s, RoutedEventArgs e) => await Guard(PrepareRetry);
     void Stop_Click(object s, RoutedEventArgs e) { jobStop?.Cancel(); StatusText.Text = "Stop requested. The current installer will finish; remaining packages will be cancelled."; }
     async Task RefreshInventory()
     {
@@ -148,7 +147,7 @@ public partial class MainWindow : Window
     async void Inventory_Click(object s, RoutedEventArgs e) => await Guard(RefreshInventory);
     void SelectInventory_Click(object s, RoutedEventArgs e) { if (!busy) foreach (var p in inventory) p.Selected = true; }
     void ClearInventory_Click(object s, RoutedEventArgs e) { if (!busy) foreach (var p in inventory) p.Selected = false; }
-    async void UpdateSelected_Click(object s, RoutedEventArgs e) => await Guard(() => StartJob(inventory.Where(p => p.Selected && p.Eligible), "upgrade"));
+    async void UpdateSelected_Click(object s, RoutedEventArgs e) => await Guard(() => StartJob(inventory.Where(p => p.Selected), "upgrade"));
     async void UpdateAll_Click(object s, RoutedEventArgs e) => await Guard(async () => { await RefreshInventory(); await StartJob(inventory.Where(p => p.Eligible), "upgrade"); });
     async void Uninstall_Click(object s, RoutedEventArgs e) => await Guard(() => StartJob(inventory.Where(p => p.Selected), "uninstall"));
     void Exclude_Click(object s, RoutedEventArgs e) => SetExclusions(true);
@@ -159,27 +158,24 @@ public partial class MainWindow : Window
         foreach (var p in inventory.Where(p => p.Selected && p.Manageable)) { string key = p.Provider + ":" + p.Id; if (exclude) settings.Exclusions.Add(key); else settings.Exclusions.Remove(key); p.Excluded = exclude; p.Changed(nameof(p.State)); }
         Storage.Save(settingsFile, settings); StatusText.Text = "Exclusion policy saved.";
     }
-    async void Capture_Click(object s, RoutedEventArgs e) => await Guard(async () => { await RefreshInventory(); foreach (var p in inventory) p.Selected = true; StatusText.Text = "Capture prepared. Untick items to exclude, then Save ticked capture. Application-data backup is separate."; });
+    async void Capture_Click(object s, RoutedEventArgs e) => await Guard(CaptureForReview);
     string? SavePath(string filename) { var d = new SaveFileDialog { Filter = "Sterling bundle (*.sterling.json)|*.sterling.json|JSON (*.json)|*.json", FileName = filename, AddExtension = true }; return d.ShowDialog(this) == true ? d.FileName : null; }
     string? OpenPath(string filter) { var d = new OpenFileDialog { Filter = filter }; return d.ShowDialog(this) == true ? d.FileName : null; }
     async void SaveCapture_Click(object s, RoutedEventArgs e) => await Guard(() =>
     {
-        CommitEdits(); var items = inventory.Where(p => p.Selected).Select(p => p.Copy()).ToList(); if (items.Count == 0) throw new InvalidOperationException("Tick inventory items to include in the capture.");
+        CommitEdits(); var items = (Tabs.SelectedIndex == 2 ? restored : inventory).Where(p => p.Selected).Select(p => p.Copy()).ToList(); if (items.Count == 0) throw new InvalidOperationException("Tick inventory items to include in the capture.");
         var path = SavePath(Environment.MachineName + "-capture.sterling.json"); if (path == null) return Task.CompletedTask;
-        if (string.Equals(Path.GetPathRoot(path), Path.GetPathRoot(Environment.GetFolderPath(Environment.SpecialFolder.Windows)), StringComparison.OrdinalIgnoreCase) && !Confirm("This capture is on the Windows volume. It may be erased during reinstall. Save another copy to an external drive or network location before erasing Windows. Save here anyway?")) return Task.CompletedTask;
         foreach (var p in items) { p.Selected = false; p.VersionPolicy = "Captured"; if (!Rules.KnownVersion(p.Version)) p.Disposition = "Captured version unknown — review policy"; }
-        Storage.Save(path, new Bundle { Name = Environment.MachineName + " capture", Packages = items }); StatusText.Text = "Capture saved: " + path; return Task.CompletedTask;
+        Storage.SaveBundle(path, new Bundle { Name = Environment.MachineName + " capture", Packages = items }); StatusText.Text = "Capture saved: " + path + (string.Equals(Path.GetPathRoot(path), Path.GetPathRoot(Environment.SystemDirectory), StringComparison.OrdinalIgnoreCase) ? " · WARNING: on the Windows volume; copy the JSON and its data folder to external storage before erasing Windows." : " · Keep the JSON and any data folder together."); return Task.CompletedTask;
     });
     async void SaveList_Click(object s, RoutedEventArgs e) => await Guard(() =>
     {
         CommitEdits(); if (basket.Count == 0) throw new InvalidOperationException("Add packages before saving a deployment list."); foreach (var p in basket) Rules.Validate(p);
-        var path = SavePath("Standard Workstation.sterling.json"); if (path != null) { Storage.Save(path, new Bundle { Kind = "list", Name = Path.GetFileNameWithoutExtension(path), Packages = basket.Select(p => p.Copy()).ToList() }); StatusText.Text = "Deployment list saved: " + path; } return Task.CompletedTask;
+        var path = SavePath("Standard Workstation.sterling.json"); if (path != null) { Storage.SaveBundle(path, new Bundle { Kind = "list", ExplicitPresetOptions = true, Name = Path.GetFileNameWithoutExtension(path), Packages = basket.Select(p => p.Copy()).ToList() }); StatusText.Text = "Deployment list saved: " + path; } return Task.CompletedTask;
     });
     async void OpenBundle_Click(object s, RoutedEventArgs e) => await Guard(() =>
     {
-        var path = OpenPath("Sterling / JSON bundles|*.json"); if (path == null) return Task.CompletedTask; var b = Storage.LoadBundle(path); restored.Clear();
-        foreach (var p in b.Packages) { p.Excluded |= settings.Exclusions.Contains(p.Provider + ":" + p.Id); restored.Add(p); }
-        BundleLabel.Text = b.Name + " · " + b.CapturedAt.ToLocalTime().ToString("g"); StatusText.Text = $"{restored.Count} items loaded; review and tick items to restore."; return Task.CompletedTask;
+        var path = OpenPath("Sterling / JSON bundles|*.json"); if (path != null) LoadCapture(path); return Task.CompletedTask;
     });
     void Preset_Click(object s, RoutedEventArgs e)
     {
@@ -203,36 +199,15 @@ public partial class MainWindow : Window
     async Task CheckAppUpdate()
     {
         AppUpdateStatus.Text = "Checking GitHub releases…"; availableRelease = await appUpdates.Check(CurrentVersion); ApplyUpdateButton.IsEnabled = availableRelease != null;
-        AppUpdateStatus.Text = availableRelease == null ? "No newer stable release is available." : "Sterling v" + availableRelease.Version + " is available. Review release notes on GitHub before updating."; if (availableRelease != null) StatusText.Text = "A Sterling update is available. Open Settings & help.";
+        AppUpdateStatus.Text = availableRelease == null ? "No newer stable release is available." : "Sterling v" + availableRelease.Version + " is available. Review the release notes below before updating."; ReleaseNotesBox.Text = availableRelease?.Notes ?? "No newer stable release. The current portable version is up to date."; if (availableRelease != null) StatusText.Text = "A Sterling update is available. Open Settings & help.";
     }
     async void CheckAppUpdate_Click(object s, RoutedEventArgs e) => await Guard(CheckAppUpdate);
-    async void ApplyAppUpdate_Click(object s, RoutedEventArgs e) => await Guard(async () =>
-    {
-        if (availableRelease == null) return;
-        if (new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator)) throw new InvalidOperationException("Reopen Sterling without Run as administrator to apply a portable update.");
-        AppUpdates.RejectReparseAncestors(AppContext.BaseDirectory); if (!File.Exists(Path.Combine(AppContext.BaseDirectory, "sterling-portable.json"))) throw new InvalidOperationException("Self-update requires the extracted portable release.");
-        if (!Confirm("Download Sterling v" + availableRelease.Version + ", verify its checksum, close this application and apply the update? Current binaries will be backed up.")) return;
-        string stage = await appUpdates.Stage(availableRelease, Log); var start = new ProcessStartInfo(Path.Combine(stage, "Sterling.Updater.exe")) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = stage };
-        start.ArgumentList.Add(Environment.ProcessId.ToString()); start.ArgumentList.Add(AppContext.BaseDirectory); start.ArgumentList.Add(stage); Process.Start(start); updateClosing = true; Application.Current.Shutdown();
-    });
+    async void ApplyAppUpdate_Click(object s, RoutedEventArgs e) => await Guard(PrepareAppUpdateReview);
     void OpenLink(string target) { try { Process.Start(new ProcessStartInfo(target) { UseShellExecute = true }); } catch (Exception ex) { Log(ex.Message); } }
     void WingetHelp_Click(object s, RoutedEventArgs e) => OpenLink("https://learn.microsoft.com/windows/package-manager/winget/");
     void ChocoHelp_Click(object s, RoutedEventArgs e) => OpenLink("https://docs.chocolatey.org/en-us/guides/organizations/");
     void Releases_Click(object s, RoutedEventArgs e) => OpenLink("https://github.com/" + AppUpdates.Repository + "/releases");
     void Logs_Click(object s, RoutedEventArgs e) => OpenLink(Path.GetDirectoryName(logFile)!);
     void Readme_Click(object s, RoutedEventArgs e) => OpenLink("https://github.com/" + AppUpdates.Repository + "#readme");
-    string? ChromeBookmarks()
-    {
-        if (Process.GetProcessesByName("chrome").Length > 0) throw new InvalidOperationException("Close Chrome, including background processes, first.");
-        var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Google", "Chrome", "User Data"); var dialog = new OpenFolderDialog { Title = "Select this user's Chrome profile (Default or Profile N)", InitialDirectory = root }; if (dialog.ShowDialog(this) != true) return null;
-        string chosen = Path.GetFullPath(dialog.FolderName); if (!string.Equals(Path.GetDirectoryName(chosen), root, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Select a profile directly inside the current user's Chrome User Data folder."); AppUpdates.RejectReparseAncestors(chosen); return Path.Combine(chosen, "Bookmarks");
-    }
-    static void ValidateBookmarks(string path) { if (new FileInfo(path).Length > 50_000_000) throw new InvalidDataException("Bookmarks file exceeds 50 MB."); using var doc = JsonDocument.Parse(File.ReadAllText(path)); if (!doc.RootElement.TryGetProperty("roots", out var roots) || !roots.TryGetProperty("bookmark_bar", out _)) throw new InvalidDataException("Not a Chrome bookmarks file."); }
-    async void BackupBookmarks_Click(object s, RoutedEventArgs e) => await Guard(() => { string? source = ChromeBookmarks(); if (source == null) return Task.CompletedTask; ValidateBookmarks(source); var d = new SaveFileDialog { FileName = "Chrome-bookmarks.json", Filter = "Bookmarks JSON|*.json" }; if (d.ShowDialog(this) == true) { File.Copy(source, d.FileName, true); StatusText.Text = "Bookmarks saved. Protect this file: it contains private bookmark titles and URLs."; } return Task.CompletedTask; });
-    async void RestoreBookmarks_Click(object s, RoutedEventArgs e) => await Guard(() =>
-    {
-        string? target = ChromeBookmarks(); if (target == null) return Task.CompletedTask; var source = OpenPath("Chrome bookmarks JSON|*.json|All files|*.*"); if (source == null) return Task.CompletedTask; ValidateBookmarks(source);
-        if (!Confirm("Replace bookmarks in " + target + "? The current file will be backed up alongside it. This replaces bookmarks; it does not merge. Chrome Sync may reconcile changes when Chrome opens.")) return Task.CompletedTask;
-        if (File.Exists(target)) File.Copy(target, target + ".sterling-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".bak", false); var temp = target + "." + Guid.NewGuid().ToString("N") + ".tmp"; File.Copy(source, temp); File.Move(temp, target, true); StatusText.Text = "Bookmarks restored for " + Environment.UserName + ". Previous file retained beside Bookmarks."; return Task.CompletedTask;
-    });
 }
+

@@ -8,9 +8,10 @@ public sealed class JobItem : Observable
     public string Status { get => status; set { status = value; Changed(); } }
     public string Detail { get; set; } = "";
     public bool RestartRequired { get; set; }
+    public int? DependsOnIndex { get; set; }
 }
 
-public sealed class JobEngine(IEnumerable<IPackageProvider> providers, Action<string> log, string? stateDirectory = null)
+public sealed class JobEngine(IEnumerable<IPackageProvider> providers, Action<string> log, string? stateDirectory = null, IDataRecipeRunner? dataRecipes = null)
 {
     readonly string stateDirectory = stateDirectory ?? Storage.Home;
     readonly Dictionary<string, IPackageProvider> providers = providers.ToDictionary(p => p.Name);
@@ -32,6 +33,16 @@ public sealed class JobEngine(IEnumerable<IPackageProvider> providers, Action<st
                 bool commandCompleted = false;
                 try
                 {
+                    if (item.Operation == "data-restore")
+                    {
+                        if (item.DependsOnIndex is int index && (index < 0 || index >= items.Count || items[index].Status is not ("Succeeded" or "Skipped"))) throw new InvalidOperationException("Data restore is waiting for its software installation to succeed.");
+                        if (dataRecipes == null) throw new InvalidOperationException("Data recipes are unavailable in this context.");
+                        item.Status = "Running";
+                        Storage.Save(Path.Combine(stateDirectory, "last-job.json"), items);
+                        item.Detail = await dataRecipes.Restore(item.Package);
+                        item.Status = "Succeeded";
+                        continue;
+                    }
                     Rules.Validate(item.Package);
                     if (item.Operation is not ("install" or "upgrade" or "uninstall" or "replace")) throw new InvalidOperationException("Unsupported job operation.");
                     if (item.Package.Excluded) throw new InvalidOperationException("This package is excluded.");

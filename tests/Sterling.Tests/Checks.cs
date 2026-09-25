@@ -36,7 +36,7 @@ var unknownVersion = P(); unknownVersion.Version = "Unknown"; unknownVersion.Ver
 Storage.Save(bundlePath, new Bundle { Packages = [unknownVersion] });
 Check(Storage.LoadBundle(bundlePath).Packages.Single().VersionPolicy == "Captured", "unknown captured version never silently becomes newest");
 Reject(() => Rules.Validate(unknownVersion), "unknown captured version blocked before execution");
-Storage.Save(bundlePath, new Bundle { SchemaVersion = 2 }); Reject(() => Storage.LoadBundle(bundlePath), "future schema rejected");
+Storage.Save(bundlePath, new Bundle { SchemaVersion = 3 }); Reject(() => Storage.LoadBundle(bundlePath), "future schema rejected");
 var fake = new FakeProvider(); fake.Fail.Add("Vendor.Fail");
 var items = new List<JobItem> { new() { Package = P("Vendor.Fail") }, new() { Package = P("Vendor.Good") } };
 var engine = Engine(fake); await engine.Run(items);
@@ -75,6 +75,40 @@ File.WriteAllText(Path.Combine(target, "sterling-portable.json"), "{}"); File.Wr
 try { AppUpdates.Apply(stage, target, backup, n => { if (n == 2) throw new IOException("Simulated copy failure"); }); } catch (IOException) { }
 Check(File.ReadAllText(Path.Combine(target, "app.dll")) == "old" && !File.Exists(Path.Combine(target, "new.dll")), "failed update restores old files and removes new files");
 AppUpdates.Apply(stage, target, Path.Combine(temp, "backup-success")); Check(File.ReadAllText(Path.Combine(target, "app.dll")) == "new", "successful update copies replacement");
+File.WriteAllText(Path.Combine(target, "customer-capture.sterling.json"), "customer inventory");
+Directory.CreateDirectory(Path.Combine(target, "presets")); File.WriteAllText(Path.Combine(target, "presets", "customer.json"), "customer preset");
+AppUpdates.Apply(stage, target, Path.Combine(temp, "backup-preservation"));
+Check(File.ReadAllText(Path.Combine(target, "customer-capture.sterling.json")) == "customer inventory" && File.ReadAllText(Path.Combine(target, "presets", "customer.json")) == "customer preset", "updater preserves captures and presets beside binaries");
+string chromeRoot = Path.Combine(temp, "chrome"), bookmarkInput = Path.Combine(temp, "bookmarks.json");
+File.WriteAllText(bookmarkInput, "{\"roots\":{\"bookmark_bar\":{\"children\":[]}}}");
+var chrome = P("Google.Chrome"); chrome.Data.BookmarksFile = bookmarkInput; chrome.Data.Sha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(bookmarkInput))); chrome.Data.RestoreBookmarks = true;
+var recipe = new BookmarkRecipe(chromeRoot, () => false);
+string bookmarkTarget = recipe.Target(chrome.Data); Directory.CreateDirectory(Path.GetDirectoryName(bookmarkTarget)!); File.WriteAllText(bookmarkTarget, "{\"roots\":{\"bookmark_bar\":{\"name\":\"old\"}}}");
+await recipe.Restore(chrome);
+Check(File.ReadAllText(bookmarkTarget) == File.ReadAllText(bookmarkInput) && Directory.GetFiles(Path.GetDirectoryName(bookmarkTarget)!, "*.bak").Length == 1, "bookmark recipe verifies restore and preserves original");
+chrome.Data.ChromeProfile = "../other-user"; Reject(() => recipe.Target(chrome.Data), "recipe rejects profile path escape"); chrome.Data.ChromeProfile = "Default";
+Storage.SaveBundle(bundlePath, new Bundle { Packages = [chrome] });
+var loadedCapture = Storage.LoadBundle(bundlePath);
+Check(!loadedCapture.Packages[0].Data.RestoreBookmarks && File.Exists(loadedCapture.Packages[0].Data.BookmarksFile), "portable v2 capture includes data attachment but resets optional restore");
+Check(!File.ReadAllText(bundlePath).Contains(temp.Replace("\\", "\\\\")), "portable bundle stores relative attachment path");
+Storage.SaveBundle(bundlePath, new Bundle { Kind = "list", ExplicitPresetOptions = true, Packages = [chrome] });
+Check(Storage.LoadBundle(bundlePath).Packages[0].Data.RestoreBookmarks, "explicit preset preserves selected data option");
+Storage.Save(bundlePath, new Bundle { SchemaVersion = 1, Packages = [chrome] });
+Check(Storage.LoadBundle(bundlePath).Packages[0].Data.BookmarksFile == "", "v1 capture migration defaults to no data actions");
+File.WriteAllText(bundlePath, "{\"SchemaVersion\":2,\"Kind\":\"capture\",\"Packages\":[{\"Id\":\"Google.Chrome\",\"Data\":{\"BookmarksFile\":\"../outside.json\"}}]}");
+Reject(() => Storage.LoadBundle(bundlePath), "import rejects data attachment escape");
+var proposedJobs = ReviewBuilder.Jobs([chrome], "install");
+Check(proposedJobs.Count == 2 && proposedJobs[1].DependsOnIndex == 0, "review builds ordered installation and optional data step");
+var review = ReviewBuilder.Describe(proposedJobs[1], [], new Settings(), recipe);
+Check(!review.Blocked && review.Notes.Contains(bookmarkTarget), "data review exposes actual target profile location");
+chrome.Excluded = true;
+Check(ReviewBuilder.Describe(new() { Package = chrome }, [], new Settings(), recipe).Blocked, "review blocks policy exclusions before Start");
+fake = new(); fake.Fail.Add("Google.Chrome"); var dataRunner = new FakeDataRecipe();
+var dependencyJobs = ReviewBuilder.Jobs([proposedJobs[0].Package], "install");
+await new JobEngine([fake], _ => {}, Path.Combine(temp, "step-job"), dataRunner).Run(dependencyJobs);
+Check(dataRunner.Count == 0 && dependencyJobs.All(j => j.Status == "Failed"), "data step never runs after failed software prerequisite");
+fake.Fail.Clear(); await new JobEngine([fake], _ => {}, Path.Combine(temp, "step-job"), dataRunner).Run(dependencyJobs);
+Check(dataRunner.Count == 1 && dependencyJobs.All(j => j.Status == "Succeeded"), "retry recovers failed installation then runs dependent data once");
 if (args.Contains("--live-winget"))
 {
     var live = new WingetProvider(new ProcessRunner(), new Settings());
@@ -86,6 +120,7 @@ if (args.Contains("--live-winget"))
 Console.WriteLine($"{passed} checks passed. Test data: {temp}");
 
 sealed class NeverRun : ICommandRunner { public Task<ProcessResult> Run(Command command, Action<string>? log = null, CancellationToken token = default) => throw new Exception("Unexpected process launch"); }
+sealed class FakeDataRecipe : IDataRecipeRunner { public int Count; public string Describe(Package p) => "test"; public Task<string> Restore(Package p) { Count++; return Task.FromResult("restored"); } }
 sealed class FakeProvider : IPackageProvider
 {
     public string Name => "winget";

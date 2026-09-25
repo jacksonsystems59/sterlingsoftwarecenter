@@ -1,0 +1,7 @@
+<Window x:Class="Sterling.App.SplashWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Width="720" Height="400" WindowStyle="None" ResizeMode="NoResize" WindowStartupLocation="CenterScreen" ShowInTaskbar="False" Background="#102D46" Title="Sterling Software Centre · starting" Icon="Branding/SterlingSoftwareCentre.ico">
+ <Grid Background="#102D46"><Path Fill="#17425B" Data="M500,0 H720 V260 L500,400 H370 L600,150 Z"/><Grid Margin="44"><Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <StackPanel><Image Source="{StaticResource Icon.app}" Width="76" Height="76" HorizontalAlignment="Left" Margin="0,0,0,20"/><TextBlock Text="STERLING TECH" Foreground="#3DE0C3" FontSize="14" FontWeight="SemiBold"/><TextBlock Text="Software Centre" Foreground="White" FontSize="38" FontWeight="SemiBold" Margin="0,6,0,6"/><TextBlock Text="Prepared for every deployment." Foreground="#B6CEDB" FontSize="16"/></StackPanel>
+  <StackPanel Grid.Row="1"><ProgressBar Height="4" IsIndeterminate="True" Foreground="#3DE0C3" Background="#2B5367" BorderThickness="0" Margin="0,0,0,14"/><DockPanel><TextBlock x:Name="SplashVersion" DockPanel.Dock="Right" Foreground="White" FontSize="13"/><TextBlock x:Name="StartupStatus" Foreground="#B6CEDB" FontSize="13" Text="Preparing your workspace…"/></DockPanel></StackPanel>
+ </Grid></Grid>
+</Window>
+

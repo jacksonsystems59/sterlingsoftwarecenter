@@ -2,6 +2,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Sterling.Core\Sterling.Core.csproj" />
+    <Page Include="..\..\assets\branding\Icons.xaml" Link="Branding\Icons.xaml" />
+    <Resource Include="..\..\assets\branding\SterlingSoftwareCentre.ico" Link="Branding\SterlingSoftwareCentre.ico" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -10,6 +12,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <ApplicationIcon>..\..\assets\branding\SterlingSoftwareCentre.ico</ApplicationIcon>
   </PropertyGroup>
 
 </Project>

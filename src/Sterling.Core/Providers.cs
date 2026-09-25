@@ -36,7 +36,7 @@ public sealed class WingetProvider(ICommandRunner runner, Settings settings) : I
         using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(3));
         return await runner.Run(new(Executable, list), token: timeout.Token);
     }
-    public async Task<string> Detect() { var r = await runner.Run(new(Executable, ["--version"])); r.EnsureSuccess(); return r.Output.Trim(); }
+    public async Task<string> Detect() { using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15)); var r = await runner.Run(new(Executable, ["--version"]), token: timeout.Token); r.EnsureSuccess(); return r.Output.Trim(); }
     public async Task<List<Package>> Search(string query)
     {
         var r = await Query("search", "--query", query, "--source", "winget");

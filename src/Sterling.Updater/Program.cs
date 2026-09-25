@@ -21,7 +21,18 @@ try
     string backup = Path.Combine(Storage.Home, "update-backups", DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N"));
     AppUpdates.Apply(stage, target, backup);
     File.AppendAllText(logPath, $"{DateTimeOffset.Now:u} Update applied. Previous files: {backup}\n");
-    Process.Start(new ProcessStartInfo(Path.Combine(target, "Sterling.App.exe")) { UseShellExecute = true, WorkingDirectory = target });
+    using var manifest = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(target, "sterling-portable.json")));
+    string expected = manifest.RootElement.GetProperty("version").GetString()!;
+    string receipt = Path.Combine(Storage.Home, "updates", "receipts", Guid.NewGuid().ToString("N") + ".json");
+    var start = new ProcessStartInfo(Path.Combine(target, "Sterling.App.exe")) { UseShellExecute = true, WorkingDirectory = target };
+    start.ArgumentList.Add("--after-update"); start.ArgumentList.Add(expected); start.ArgumentList.Add("--receipt"); start.ArgumentList.Add(receipt);
+    using var launched = Process.Start(start) ?? throw new IOException("Could not restart Sterling.");
+    var timer = Stopwatch.StartNew();
+    while (!File.Exists(receipt) && !launched.HasExited && timer.Elapsed < TimeSpan.FromSeconds(90)) await Task.Delay(250);
+    if (!File.Exists(receipt)) throw new IOException("Update files were applied but restart could not be verified. Previous files: " + backup);
+    using var proof = System.Text.Json.JsonDocument.Parse(File.ReadAllText(receipt));
+    if (!proof.RootElement.GetProperty("Success").GetBoolean() || proof.RootElement.GetProperty("Version").GetString() != expected) throw new IOException("Restarted version did not match the requested release. Previous files: " + backup);
+    File.AppendAllText(logPath, $"{DateTimeOffset.Now:u} Restart verified: displayed version {expected}.\n");
     return 0;
 }
 catch (Exception ex)

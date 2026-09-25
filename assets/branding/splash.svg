@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="400" viewBox="0 0 720 400">
+<title>Sterling Software Centre editable splash artwork</title>
+<rect width="720" height="400" rx="24" fill="#102D46"/>
+<path d="M500 0H720V260L500 400H370L600 150Z" fill="#17425B"/>
+<g transform="translate(44 44)"><rect width="76" height="76" rx="16" fill="#123C52"/><g transform="translate(6 6)"><path d="M18 14H47L41 23H24V28H42V49H13L19 40H36V35H18Z" fill="#3DE0C3"/><path d="M44 9H54V19H44Z" fill="#FFC86B"/></g></g>
+<text x="44" y="174" font-family="Segoe UI, sans-serif" font-size="15" letter-spacing="4" fill="#3DE0C3">STERLING TECH</text>
+<text x="44" y="230" font-family="Segoe UI, sans-serif" font-size="38" font-weight="600" fill="white">Software Centre</text>
+<text x="44" y="267" font-family="Segoe UI, sans-serif" font-size="16" fill="#B6CEDB">Prepared for every deployment.</text>
+<rect x="44" y="325" width="632" height="4" rx="2" fill="#2B5367"/><rect x="44" y="325" width="210" height="4" rx="2" fill="#3DE0C3"/>
+<text x="44" y="358" font-family="Segoe UI, sans-serif" font-size="13" fill="#B6CEDB">Preparing your workspace…</text>
+<text x="632" y="358" font-family="Segoe UI, sans-serif" font-size="13" fill="white">v0.1.1</text>
+</svg>

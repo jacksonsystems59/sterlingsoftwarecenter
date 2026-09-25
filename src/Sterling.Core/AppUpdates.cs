@@ -4,15 +4,16 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 namespace Sterling.Core;
-public record AppRelease(string Version, string Page, string ZipUrl, string ChecksumUrl, string Filename);
+public record AppRelease(string Version, string Page, string ZipUrl, string ChecksumUrl, string Filename, string Notes = "");
 public sealed class AppUpdates
 {
     public const string Repository = "jacksonsystems59/sterlingsoftwarecenter";
     static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(15) };
-    static AppUpdates() { Http.DefaultRequestHeaders.UserAgent.ParseAdd("SterlingSoftwareCentre/0.1.0"); }
+    static AppUpdates() { Http.DefaultRequestHeaders.UserAgent.ParseAdd("SterlingSoftwareCentre/0.1.1"); }
     public async Task<AppRelease?> Check(Version current)
     {
-        using var response = await Http.GetAsync($"https://api.github.com/repos/{Repository}/releases/latest");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var response = await Http.GetAsync($"https://api.github.com/repos/{Repository}/releases/latest", timeout.Token);
         if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -24,7 +25,7 @@ public sealed class AppUpdates
         string Asset(string name) => root.GetProperty("assets").EnumerateArray().Single(a => a.GetProperty("name").GetString() == name).GetProperty("browser_download_url").GetString()!;
         string zip = Asset(filename), checksum = Asset(filename + ".sha256");
         ValidateAsset(zip, tag, filename); ValidateAsset(checksum, tag, filename + ".sha256");
-        return new(tag[1..], $"https://github.com/{Repository}/releases/tag/{tag}", zip, checksum, filename);
+        return new(tag[1..], $"https://github.com/{Repository}/releases/tag/{tag}", zip, checksum, filename, root.TryGetProperty("body", out var body) ? body.GetString() ?? "No release notes provided." : "No release notes provided.");
     }
     static void ValidateAsset(string url, string tag, string name)
     {
@@ -39,7 +40,7 @@ public sealed class AppUpdates
     public static async Task Verify(string path, string expected)
     {
         await using var input = File.OpenRead(path);
-        string actual = Convert.ToHexString(await SHA256.HashDataAsync(input));
+        string actual = Convert.ToHexString(await SHA256.HashDataAsync(input).ConfigureAwait(false));
         if (!actual.Equals(expected, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("SHA-256 mismatch. The update will not be installed.");
     }
     public async Task<string> Stage(AppRelease release, Action<string> log)

@@ -28,6 +28,7 @@ public sealed class Package : Observable
     public bool Excluded { get; set; }
     public bool Pinned { get; set; }
     public bool MultipleProviders { get; set; }
+    public DataOptions Data { get; set; } = new();
     [JsonIgnore] public string Key => Provider + ":" + Id + ":" + Scope;
     [JsonIgnore] public bool Manageable => Match == "Provider match" && Rules.ValidId(Id) && Provider is "winget" or "chocolatey";
     [JsonIgnore] public bool Eligible => Manageable && !Excluded && !Pinned && !MultipleProviders && !string.IsNullOrWhiteSpace(Available) && Rules.KnownVersion(Version);
@@ -37,7 +38,8 @@ public sealed class Package : Observable
 
 public sealed class Bundle
 {
-    public int SchemaVersion { get; set; } = 1;
+    public int SchemaVersion { get; set; } = 2;
+    public bool ExplicitPresetOptions { get; set; }
     public string Kind { get; set; } = "capture";
     public string Name { get; set; } = "Captured PC";
     public DateTimeOffset CapturedAt { get; set; } = DateTimeOffset.UtcNow;
@@ -92,15 +94,42 @@ public static class Storage
     {
         if (new FileInfo(path).Length > 16 * 1024 * 1024) throw new InvalidDataException("Bundle exceeds 16 MB.");
         var b = Load<Bundle>(path);
-        if (b.SchemaVersion != 1 || b.Kind is not ("capture" or "list") || b.Packages == null || b.Packages.Count > 10000)
+        if (b.SchemaVersion is not (1 or 2) || b.Kind is not ("capture" or "list") || b.Packages == null || b.Packages.Count > 10000)
             throw new InvalidDataException("Unsupported bundle format/version.");
         foreach (var p in b.Packages)
         {
             if (p == null) throw new InvalidDataException("Invalid package entry.");
             p.Selected = false;
+            p.Data ??= new();
+            if (b.SchemaVersion == 1) p.Data = new();
+            if (b.Kind != "list" || !b.ExplicitPresetOptions) p.Data.RestoreBookmarks = false;
+            if (!string.IsNullOrEmpty(p.Data.BookmarksFile)) p.Data.BookmarksFile = AppUpdates.SafePath(Path.GetDirectoryName(Path.GetFullPath(path))!, p.Data.BookmarksFile);
             if (p.Manageable) { Rules.Validate(p, false); if (p.VersionPolicy == "Captured" && !Rules.KnownVersion(p.Version)) p.Disposition = "Captured version unknown — review policy"; }
             else { p.Match = "Unknown — manual review"; p.Disposition = "Manual attention / custom installer"; }
         }
+        b.SchemaVersion = 2;
         return b;
+    }
+    public static void SaveBundle(string path, Bundle bundle)
+    {
+        bundle = JsonSerializer.Deserialize<Bundle>(JsonSerializer.Serialize(bundle, Json), Json)!;
+        bundle.SchemaVersion = 2;
+        string root = Path.GetDirectoryName(Path.GetFullPath(path))!;
+        string dataFolder = Path.GetFileNameWithoutExtension(path) + ".data-" + Guid.NewGuid().ToString("N")[..8];
+        int index = 0;
+        foreach (var p in bundle.Packages)
+        {
+            p.Selected = false;
+            if (string.IsNullOrEmpty(p.Data.BookmarksFile)) continue;
+            BookmarkRecipe.ValidateFile(p.Data.BookmarksFile);
+            if (!string.IsNullOrEmpty(p.Data.Sha256)) AppUpdates.Verify(p.Data.BookmarksFile, p.Data.Sha256).GetAwaiter().GetResult();
+            string relative = Path.Combine(dataFolder, $"chrome-{index++}-bookmarks.json");
+            string destination = AppUpdates.SafePath(root, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(p.Data.BookmarksFile, destination, false);
+            p.Data.Sha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(destination)));
+            p.Data.BookmarksFile = relative;
+        }
+        Save(path, bundle);
     }
 }
