@@ -1,6 +1,6 @@
 # Sterling Software Centre
 
-Portable Windows x64 software and recovery tools for Sterling Tech engineers. **v0.1.2** uses .NET 10/WPF and includes its runtime. Download the ZIP and matching SHA-256 from [GitHub Releases](https://github.com/jacksonsystems59/sterlingsoftwarecenter/releases/latest), verify the checksum, extract every file, then run `Sterling.App.exe` as the intended Windows user.
+Portable Windows x64 software and recovery tools for IT engineers / MSP. **v0.1.2** uses .NET 10/WPF and includes its runtime. Download the ZIP and matching SHA-256 from [GitHub Releases](https://github.com/jacksonsystems59/sterlingsoftwarecenter/releases/latest), verify the checksum, extract every file, then run `Sterling.App.exe` as the intended Windows user.
 
 ## What's new in v0.1.2
 
