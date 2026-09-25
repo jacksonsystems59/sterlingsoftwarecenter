@@ -31,13 +31,14 @@ public sealed class Package : Observable
     public DataOptions Data { get; set; } = new();
     [JsonIgnore] public string Key => Provider + ":" + Id + ":" + Scope;
     [JsonIgnore] public bool Manageable => Match == "Provider match" && Rules.ValidId(Id) && Provider is "winget" or "chocolatey";
-    [JsonIgnore] public bool Eligible => Manageable && !Excluded && !Pinned && !MultipleProviders && !string.IsNullOrWhiteSpace(Available) && Rules.KnownVersion(Version);
+    [JsonIgnore] public bool Eligible => Manageable && !Excluded && !Pinned && !MultipleProviders && Rules.NewerAvailable(Version, Available);
     [JsonIgnore] public string State => Excluded ? "Excluded" : MultipleProviders ? "Multiple providers — review" : Pinned ? "Pinned / pin status unavailable" : Match;
     public Package Copy() => JsonSerializer.Deserialize<Package>(JsonSerializer.Serialize(this))!;
 }
 
 public sealed class Bundle
 {
+    public string BrowserBackupFile { get; set; } = "";
     public int SchemaVersion { get; set; } = 2;
     public bool ExplicitPresetOptions { get; set; }
     public string Kind { get; set; } = "capture";
@@ -49,6 +50,7 @@ public sealed class Bundle
 
 public sealed class Settings
 {
+    public int SourceCheckHours { get; set; } = 24;
     public string ChocolateySource { get; set; } = "";
     public bool AcceptSourceAgreements { get; set; }
     public bool CheckAppUpdates { get; set; } = true;
@@ -57,6 +59,7 @@ public sealed class Settings
 
 public static partial class Rules
 {
+    public static bool NewerAvailable(string installed, string available) => Version.TryParse(installed, out var current) && Version.TryParse(available, out var next) && next > current;
     [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._+\-]{0,199}$")] private static partial Regex IdPattern();
     public static bool ValidId(string? value) => value != null && IdPattern().IsMatch(value);
     public static bool KnownVersion(string? value) => !string.IsNullOrWhiteSpace(value) && !value.Equals("Unknown", StringComparison.OrdinalIgnoreCase) && value != "N/A" && !value.Contains('…') && !value.StartsWith('<') && !value.StartsWith('>');
@@ -108,6 +111,7 @@ public static class Storage
             else { p.Match = "Unknown — manual review"; p.Disposition = "Manual attention / custom installer"; }
         }
         b.SchemaVersion = 2;
+        if (!string.IsNullOrEmpty(b.BrowserBackupFile)) b.BrowserBackupFile = AppUpdates.SafePath(Path.GetDirectoryName(Path.GetFullPath(path))!, b.BrowserBackupFile);
         return b;
     }
     public static void SaveBundle(string path, Bundle bundle)
@@ -117,6 +121,11 @@ public static class Storage
         string root = Path.GetDirectoryName(Path.GetFullPath(path))!;
         string dataFolder = Path.GetFileNameWithoutExtension(path) + ".data-" + Guid.NewGuid().ToString("N")[..8];
         int index = 0;
+        if (!string.IsNullOrEmpty(bundle.BrowserBackupFile))
+        {
+            string relative = Path.Combine(dataFolder, "BrowserBackup.zip"); string dest = AppUpdates.SafePath(root, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(dest)!); File.Copy(bundle.BrowserBackupFile, dest, false); bundle.BrowserBackupFile = relative;
+        }
         foreach (var p in bundle.Packages)
         {
             p.Selected = false;

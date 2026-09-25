@@ -44,13 +44,14 @@ public partial class MainWindow : Window
         ChocoSourceBox.Text = settings.ChocolateySource; AgreementBox.IsChecked = settings.AcceptSourceAgreements; AppUpdateBox.IsChecked = settings.CheckAppUpdates;
         VersionLabel.Text = "v" + CurrentVersion.ToString(3) + "  ·  WINDOWS x64";
         Subtitle.Text = Environment.MachineName + "  /  " + Environment.UserName + "  /  LOCAL WORKSPACE";
+        SetupFeatures(testProviders == null);
         Closing += (_, e) => { if (busy && !updateClosing) { e.Cancel = true; StatusText.Text = "Operation running. Use Stop after current package before closing."; } };
     }
     public async Task InitializeAsync(Action<string> status)
     {
         status("Detecting package providers…"); await Detect();
         status("Loading previous job and local policy…"); LoadPreviousJob();
-        if (settings.CheckAppUpdates) { status("Checking Sterling release information…"); try { await CheckAppUpdate(); } catch (Exception ex) { AppUpdateStatus.Text = "Update check unavailable: " + ex.Message; Log(ex.Message); } }
+        if (settings.CheckAppUpdates) { status("Checking Sterling releases in the background…"); _ = BackgroundUpdateCheck(); }
         status("Your workspace is ready");
     }
     static Version CurrentVersion => Assembly.GetExecutingAssembly().GetName().Version!;
@@ -58,7 +59,7 @@ public partial class MainWindow : Window
     {
         if (busy) { StatusText.Text = "An operation is already running. See Jobs & logs."; return; }
         busy = true;
-        try { await action(); } catch (Exception ex) { StatusText.Text = ex.Message; Log(ex.ToString()); } finally { busy = false; }
+        try { await action(); } catch (Exception ex) { StatusText.Text = ex.Message; Log(ex.ToString()); } finally { busy = false; ReviewConsent_Changed(this, new RoutedEventArgs()); }
     }
     void Log(string message)
     {
@@ -120,13 +121,14 @@ public partial class MainWindow : Window
     void Stop_Click(object s, RoutedEventArgs e) { jobStop?.Cancel(); StatusText.Text = "Stop requested. The current installer will finish; remaining packages will be cancelled."; }
     async Task RefreshInventory()
     {
-        inventory.Clear(); StatusText.Text = "Reading installed applications and applicable updates…"; List<string> warnings = [];
+        var selectedKeys = inventory.Where(p => p.Selected).Select(p => p.Key).ToHashSet(); inventory.Clear(); if (inventoryScanStatus != null) inventoryScanStatus.Text = "Scanning installed applications and updates…"; StatusText.Text = "Reading installed applications and applicable updates…"; List<string> warnings = [];
         foreach (var p in providers) try { foreach (var item in await p.Inventory()) inventory.Add(item); } catch (Exception ex) { warnings.Add(p.Name); Log("Inventory incomplete for " + p.Name + ": " + ex.Message); }
         foreach (var item in ReadRegistry()) if (!inventory.Any(p => p.Name.Equals(item.Name, StringComparison.OrdinalIgnoreCase) && p.Version == item.Version && p.Scope == item.Scope)) inventory.Add(item);
         static string Normal(string text) => new(text.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
         foreach (var group in inventory.Where(p => p.Manageable).GroupBy(p => Normal(p.Name))) if (group.Select(p => p.Provider).Distinct().Count() > 1) foreach (var p in group) p.MultipleProviders = true;
-        foreach (var p in inventory) p.Excluded = settings.Exclusions.Contains(p.Provider + ":" + p.Id);
+        foreach (var p in inventory) { p.Excluded = settings.Exclusions.Contains(p.Provider + ":" + p.Id); p.Selected = selectedKeys.Contains(p.Key); }
         StatusText.Text = $"{inventory.Count} inventory rows · {inventory.Count(p => p.Eligible)} eligible updates" + (warnings.Count > 0 ? " · Provider unavailable/incomplete: " + string.Join(", ", warnings) + ". See logs." : "");
+        InventoryScanCompleted(warnings);
     }
     static IEnumerable<Package> ReadRegistry()
     {
@@ -147,8 +149,8 @@ public partial class MainWindow : Window
     async void Inventory_Click(object s, RoutedEventArgs e) => await Guard(RefreshInventory);
     void SelectInventory_Click(object s, RoutedEventArgs e) { if (!busy) foreach (var p in inventory) p.Selected = true; }
     void ClearInventory_Click(object s, RoutedEventArgs e) { if (!busy) foreach (var p in inventory) p.Selected = false; }
-    async void UpdateSelected_Click(object s, RoutedEventArgs e) => await Guard(() => StartJob(inventory.Where(p => p.Selected), "upgrade"));
-    async void UpdateAll_Click(object s, RoutedEventArgs e) => await Guard(async () => { await RefreshInventory(); await StartJob(inventory.Where(p => p.Eligible), "upgrade"); });
+    async void UpdateSelected_Click(object s, RoutedEventArgs e) => await Guard(() => DirectUpdates(inventory.Where(p => p.Selected)));
+    async void UpdateAll_Click(object s, RoutedEventArgs e) => await Guard(async () => { await RefreshInventory(); await DirectUpdates(inventory.Where(p => p.Eligible)); });
     async void Uninstall_Click(object s, RoutedEventArgs e) => await Guard(() => StartJob(inventory.Where(p => p.Selected), "uninstall"));
     void Exclude_Click(object s, RoutedEventArgs e) => SetExclusions(true);
     void Unexclude_Click(object s, RoutedEventArgs e) => SetExclusions(false);
@@ -163,10 +165,10 @@ public partial class MainWindow : Window
     string? OpenPath(string filter) { var d = new OpenFileDialog { Filter = filter }; return d.ShowDialog(this) == true ? d.FileName : null; }
     async void SaveCapture_Click(object s, RoutedEventArgs e) => await Guard(() =>
     {
-        CommitEdits(); var items = (Tabs.SelectedIndex == 2 ? restored : inventory).Where(p => p.Selected).Select(p => p.Copy()).ToList(); if (items.Count == 0) throw new InvalidOperationException("Tick inventory items to include in the capture.");
+        CommitEdits(); var items = (Tabs.SelectedIndex == 2 ? restored : inventory).Select(p => p.Copy()).ToList(); if (items.Count == 0) throw new InvalidOperationException("Capture or scan the PC before saving its inventory.");
         var path = SavePath(Environment.MachineName + "-capture.sterling.json"); if (path == null) return Task.CompletedTask;
         foreach (var p in items) { p.Selected = false; p.VersionPolicy = "Captured"; if (!Rules.KnownVersion(p.Version)) p.Disposition = "Captured version unknown — review policy"; }
-        Storage.SaveBundle(path, new Bundle { Name = Environment.MachineName + " capture", Packages = items }); StatusText.Text = "Capture saved: " + path + (string.Equals(Path.GetPathRoot(path), Path.GetPathRoot(Environment.SystemDirectory), StringComparison.OrdinalIgnoreCase) ? " · WARNING: on the Windows volume; copy the JSON and its data folder to external storage before erasing Windows." : " · Keep the JSON and any data folder together."); return Task.CompletedTask;
+        Storage.SaveBundle(path, new Bundle { Name = Environment.MachineName + " capture", Packages = items, BrowserBackupFile = browserBackupAttachment }); StatusText.Text = "Capture saved: " + path + (string.Equals(Path.GetPathRoot(path), Path.GetPathRoot(Environment.SystemDirectory), StringComparison.OrdinalIgnoreCase) ? " · WARNING: on the Windows volume; copy the JSON and its data folder to external storage before erasing Windows." : " · Keep the JSON and any data folder together."); return Task.CompletedTask;
     });
     async void SaveList_Click(object s, RoutedEventArgs e) => await Guard(() =>
     {
@@ -181,13 +183,13 @@ public partial class MainWindow : Window
     {
         if (busy) return; restored.Clear(); foreach (var (id, name) in new[] { ("Google.Chrome", "Google Chrome"), ("7zip.7zip", "7-Zip"), ("Adobe.Acrobat.Reader.64-bit", "Adobe Acrobat Reader") }) restored.Add(new Package { Id = id, Name = name, Scope = "machine", Selected = true }); BundleLabel.Text = "Standard Workstation · editable starter list";
     }
-    void SelectRestore_Click(object s, RoutedEventArgs e) { if (!busy) foreach (var p in restored) p.Selected = p.Manageable && !p.Excluded; }
+    void SelectRestore_Click(object s, RoutedEventArgs e) { if (!busy) foreach (var p in restored) p.Selected = p.Disposition == "Ready for automatic install" && !p.Excluded; }
     void CapturedPolicy_Click(object s, RoutedEventArgs e) => SetPolicy("Captured");
     void NewestPolicy_Click(object s, RoutedEventArgs e) => SetPolicy("Newest");
     void SetPolicy(string policy) { if (busy) return; CommitEdits(); foreach (var p in restored) { p.VersionPolicy = policy; p.Changed(nameof(p.VersionPolicy)); } }
     async void Availability_Click(object s, RoutedEventArgs e) => await Guard(async () =>
     {
-        CommitEdits(); foreach (var p in restored.Where(p => p.Selected)) { try { p.Disposition = p.Manageable && await Provider(p.Provider).Available(p) ? "Version available" : "Unavailable / manual attention"; } catch (Exception ex) { p.Disposition = "Check failed"; Log(p.Id + ": " + ex.Message); } p.Changed(nameof(p.Disposition)); } StatusText.Text = "Availability checked. Versions are checked again before installation.";
+        await ClassifyCapture();
     });
     void RestoreQueue_Click(object s, RoutedEventArgs e) { if (busy) return; CommitEdits(); foreach (var p in restored.Where(p => p.Selected)) AddBasket(p); Tabs.SelectedIndex = 0; StatusText.Text = basket.Count + " packages selected. Manual and excluded items were not added."; }
     async void RestoreUninstall_Click(object s, RoutedEventArgs e) => await Guard(() => StartJob(restored.Where(p => p.Selected), "uninstall"));
@@ -198,7 +200,7 @@ public partial class MainWindow : Window
     });
     async Task CheckAppUpdate()
     {
-        AppUpdateStatus.Text = "Checking GitHub releases…"; availableRelease = await appUpdates.Check(CurrentVersion); ApplyUpdateButton.IsEnabled = availableRelease != null;
+        AppUpdateStatus.Text = "Checking GitHub releases…"; availableRelease = await appUpdates.Check(CurrentVersion); ApplyUpdateButton.IsEnabled = availableRelease != null; RefreshUpdateIndicator();
         AppUpdateStatus.Text = availableRelease == null ? "No newer stable release is available." : "Sterling v" + availableRelease.Version + " is available. Review the release notes below before updating."; ReleaseNotesBox.Text = availableRelease?.Notes ?? "No newer stable release. The current portable version is up to date."; if (availableRelease != null) StatusText.Text = "A Sterling update is available. Open Settings & help.";
     }
     async void CheckAppUpdate_Click(object s, RoutedEventArgs e) => await Guard(CheckAppUpdate);
@@ -210,4 +212,3 @@ public partial class MainWindow : Window
     void Logs_Click(object s, RoutedEventArgs e) => OpenLink(Path.GetDirectoryName(logFile)!);
     void Readme_Click(object s, RoutedEventArgs e) => OpenLink("https://github.com/" + AppUpdates.Repository + "#readme");
 }
-

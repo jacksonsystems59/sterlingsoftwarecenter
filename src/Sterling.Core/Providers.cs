@@ -79,6 +79,7 @@ public sealed class WingetProvider(ICommandRunner runner, Settings settings) : I
     {
         Rules.Validate(p);
         List<string> args = ["show", "--id", p.Id, "--exact", "--source", "winget"];
+        args.AddRange(["--architecture", "x64"]); if (p.Scope != "unknown") args.AddRange(["--scope", p.Scope]);
         if (p.VersionPolicy == "Captured") args.AddRange(["--version", p.Version]);
         return (await Query(args.ToArray())).Success;
     }

@@ -4,6 +4,9 @@
     <ProjectReference Include="..\Sterling.Core\Sterling.Core.csproj" />
     <Page Include="..\..\assets\branding\Icons.xaml" Link="Branding\Icons.xaml" />
     <Resource Include="..\..\assets\branding\SterlingSoftwareCentre.ico" Link="Branding\SterlingSoftwareCentre.ico" />
+    <Content Include="..\..\assets\common-applications.json" Link="common-applications.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\assets\security-findings.json" Link="security-findings.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Tools\*.ps1" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <PropertyGroup>

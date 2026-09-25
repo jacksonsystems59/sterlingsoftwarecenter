@@ -43,16 +43,17 @@ public partial class MainWindow
         Assert(fake.Executed.Count == 0 && pendingJobs.Count == 0, "Back cancels install review without package changes");
         var installed = P("7zip.7zip", "7-Zip"); installed.Available = "2.0"; installed.Selected = true; fake.Installed.Add(installed.Copy()); inventory.Add(installed); Tabs.SelectedIndex = 1;
         UpdateSelected_Click(this, new RoutedEventArgs()); await Settled();
-        Assert(Tabs.SelectedIndex == 5 && reviewRows.Single().Action == "Update" && reviewRows.Single().Installed == "1.0" && reviewRows.Single().Proposed == "2.0", "Update ticked reviews installed and proposed versions in app");
-        Snapshot("review-update"); ReviewCancel_Click(this, new RoutedEventArgs());
-        Assert(fake.Executed.Count == 0, "Back cancels update without package changes");
-        UpdateSelected_Click(this, new RoutedEventArgs()); await Settled(); ReviewConsent.IsChecked = true;
-        Assert(ReviewStartButton.IsEnabled, "Start enabled only after acknowledging valid review");
-        ReviewStart_Click(this, new RoutedEventArgs()); await Settled();
-        Assert(fake.Executed.SequenceEqual(["upgrade:7zip.7zip"]) && jobs.Single().Status == "Succeeded" && Tabs.SelectedIndex == 3, "Start runs the reviewed update and shows in-app results");
-        installed.Excluded = true; UpdateSelected_Click(this, new RoutedEventArgs()); await Settled(); ReviewConsent.IsChecked = true;
-        Assert(reviewRows.Single().Blocked && !ReviewStartButton.IsEnabled, "Excluded ticked item remains visible and blocks Start");
-        ReviewCancel_Click(this, new RoutedEventArgs()); installed.Excluded = false;
+        Assert(Tabs.SelectedIndex == 3 && reviewRows.Count == 0, "Update ticked starts directly in Jobs without Review");
+        Assert(fake.Executed.SequenceEqual(["upgrade:7zip.7zip"]) && jobs.Single().Status == "Succeeded", "Direct update executes and verifies eligible package");
+        Snapshot("direct-update");
+        installed.Excluded = true; UpdateSelected_Click(this, new RoutedEventArgs()); await Settled();
+        Assert(jobs.Single().Status == "Skipped" && fake.Executed.Count == 1, "Direct updates skip exclusions without executing package changes");
+        installed.Excluded = false;
+        Assert(commonApps.Count == 6 && commonApps.Single(a => a.Id == "Microsoft.Office").Enabled == false, "Common applications use configured IDs and hold unverified Office deployment");
+        SearchBox.Text = "fire"; Assert(suggestions.Items.Cast<string>().Any(s => s.Contains("Firefox")) && fake.Executed.Count == 1, "Typing suggestions never installs applications");
+        availableRelease = new("9.0.0", "", "", "", ""); RefreshUpdateIndicator();
+        Assert(updateIndicator.Visibility == Visibility.Visible && updateIndicator.Content.ToString()!.Contains("9.0.0"), "Newer release produces the top-right update indicator");
+        availableRelease = null; RefreshUpdateIndicator();
         string legacy = Path.Combine(sandbox, "legacy-v010.sterling.json");
         File.WriteAllText(legacy, """
         {"SchemaVersion":1,"Kind":"capture","Name":"v0.1.0 customer capture","Packages":[{"Provider":"winget","Id":"Google.Chrome","Name":"Google Chrome","Version":"1.0","Scope":"machine","Match":"Provider match","VersionPolicy":"Captured"},{"Provider":"winget","Id":"7zip.7zip","Name":"7-Zip","Version":"1.0","Scope":"machine","Match":"Provider match","VersionPolicy":"Captured"}]}
@@ -60,7 +61,7 @@ public partial class MainWindow
         Tabs.SelectedIndex = 2; LoadCapture(legacy); await Settled();
         Assert(restored.Count == 2 && DataRecipePanel.IsEnabled && !restored[0].Data.RestoreBookmarks, "v0.1.0 capture opens with Chrome detail and optional data unchecked");
         RestoreGrid.SelectedItem = restored[1]; await Settled();
-        Assert(!DataRecipePanel.IsEnabled && DataRecipeStatus.Text.Contains("No tested"), "Unsupported application clearly states no tested data recipe");
+        Assert(!DataRecipePanel.IsEnabled && DataRecipePanel.Visibility == Visibility.Collapsed && DataRecipeStatus.Text.Contains("No tested"), "Unsupported application clearly states no tested data recipe");
         RestoreGrid.SelectedItem = restored[0];
         var chrome = restored[0]; string source = Path.Combine(sandbox, "bookmarks.json");
         File.WriteAllText(source, "{\"roots\":{\"bookmark_bar\":{\"children\":[],\"name\":\"Restored test\"}}}");

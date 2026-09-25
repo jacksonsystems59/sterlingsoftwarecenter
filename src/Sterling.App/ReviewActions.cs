@@ -38,9 +38,25 @@ public partial class MainWindow
             reviewRows.Add(ReviewBuilder.Describe(job, installed, settings, recipe, errors.GetValueOrDefault(job.Package.Provider)));
         }
         ShowReview(title ?? "Review your changes", $"{reviewRows.Count} ordered step(s) across {reviewRows.Select(r => r.Item.Package.Key).Distinct().Count()} application(s). Every affected application is listed below.");
+        if (liveFeatures)
+        {
+            List<string> older = [];
+            foreach (var job in proposed.Where(j => j.Operation is "install" or "replace" && j.Package.VersionPolicy == "Captured"))
+            {
+                try
+                {
+                    var newest = job.Package.Copy(); newest.VersionPolicy = "Newest"; var latest = await information.Details(newest);
+                    if (Version.TryParse(job.Package.Version, out var captured) && Version.TryParse(latest.Version, out var available) && captured < available)
+                        older.Add(job.Package.Name + ": captured " + captured + " is older than " + available + ". " + AdvisoryText(job.Package));
+                }
+                catch (Exception ex) { Log("Latest-version comparison unavailable: " + ex.Message); }
+            }
+            if (older.Count > 0) { olderAcknowledged = false; olderChoices.Visibility = Visibility.Visible; ReviewWarning.Text += "\n" + string.Join("\n", older); ReviewStartButton.IsEnabled = false; }
+        }
     }
     void ShowReview(string title, string summary)
     {
+        olderAcknowledged = true; if (olderChoices != null) olderChoices.Visibility = Visibility.Collapsed;
         reviewReturnTab = Tabs.SelectedIndex == 5 ? reviewReturnTab : Tabs.SelectedIndex;
         ReviewTitle.Text = title; ReviewSummary.Text = summary; ReviewGrid.ItemsSource = reviewRows;
         ReviewWarning.Text = reviewRows.Any(r => r.Blocked) ? "One or more items are blocked. Read their details below, then go Back to revise the selection or policy. Start is disabled." : "No changes have been made. Start runs these steps in order. UAC may appear for installers; Sterling will not request a PC restart.";
@@ -49,7 +65,7 @@ public partial class MainWindow
     }
     void ReviewConsent_Changed(object sender, RoutedEventArgs e)
     {
-        if (ReviewStartButton != null) ReviewStartButton.IsEnabled = ReviewConsent.IsChecked == true && reviewRows.Count > 0 && !reviewRows.Any(r => r.Blocked) && !busy;
+        if (ReviewStartButton != null) ReviewStartButton.IsEnabled = ReviewConsent.IsChecked == true && reviewRows.Count > 0 && !reviewRows.Any(r => r.Blocked) && !busy && olderAcknowledged;
     }
     void ReviewCancel_Click(object sender, RoutedEventArgs e)
     {
@@ -61,7 +77,7 @@ public partial class MainWindow
     }
     async void ReviewStart_Click(object sender, RoutedEventArgs e) => await Guard(async () =>
     {
-        if (ReviewConsent.IsChecked != true || reviewRows.Count == 0 || reviewRows.Any(r => r.Blocked)) throw new InvalidOperationException("Review all items and acknowledge the terms before starting.");
+        if (ReviewConsent.IsChecked != true || reviewRows.Count == 0 || reviewRows.Any(r => r.Blocked) || !olderAcknowledged) throw new InvalidOperationException("Review all items and acknowledge the terms and older-version choice before starting.");
         ReviewStartButton.IsEnabled = false;
         var special = pendingSpecial; pendingSpecial = null;
         if (special != null) { reviewRows = []; ReviewGrid.ItemsSource = null; await special(); return; }
@@ -92,17 +108,22 @@ public partial class MainWindow
         foreach (var p in inventory) { var copy = p.Copy(); copy.Selected = true; copy.VersionPolicy = "Captured"; restored.Add(copy); }
         BundleLabel.Text = Environment.MachineName + " · capture review";
         Tabs.SelectedIndex = 2; RestoreGrid.SelectedItem = restored.FirstOrDefault(BookmarkRecipe.Supports) ?? restored.FirstOrDefault();
-        StatusText.Text = "Untick excluded software; select an app for data backup options, then Save ticked capture. Keep the JSON and its data folder together.";
+        StatusText.Text = "Untick excluded software; select an app for data backup options, then Save capture. Keep the JSON and its data folder together.";
     }
     void LoadCapture(string path)
     {
         var bundle = Storage.LoadBundle(path); restored.Clear();
+        browserBackupAttachment = bundle.BrowserBackupFile;
         foreach (var p in bundle.Packages) { p.Excluded |= settings.Exclusions.Contains(p.Provider + ":" + p.Id); restored.Add(p); }
         BundleLabel.Text = bundle.Name + " · " + bundle.CapturedAt.ToLocalTime().ToString("g");
         RestoreGrid.SelectedItem = restored.FirstOrDefault();
         StatusText.Text = $"{restored.Count} items loaded; review and tick items to restore. Data steps from captures start unchecked.";
     }
-    async void ReviewRestore_Click(object sender, RoutedEventArgs e) => await Guard(() => PrepareReview(ReviewBuilder.Jobs(restored.Where(p => p.Selected), "install"), "Review bulk restore"));
+    async void ReviewRestore_Click(object sender, RoutedEventArgs e) => await Guard(() =>
+    {
+        if (liveFeatures && restored.Any(p => p.Selected && p.Disposition != "Ready for automatic install")) throw new InvalidOperationException("Check availability/readiness, then select the automatic items. Manual items remain in the capture and need their suggested action.");
+        return PrepareReview(ReviewBuilder.Jobs(restored.Where(p => p.Selected), "install"), "Review bulk restore");
+    });
     void RestoreSelection_Changed(object sender, SelectionChangedEventArgs e) => ShowAppDetails();
     void Profile_Changed(object sender, SelectionChangedEventArgs e) => ShowDataLocations();
     void ShowAppDetails()
@@ -113,6 +134,7 @@ public partial class MainWindow
         DataAppSummary.Text = p == null ? "Choose a captured application above. Optional data steps start unchecked." : $"{p.Provider} / {p.Id}\nCaptured: {p.Version} · scope: {p.Scope}\n{p.Disposition}";
         bool supported = p != null && BookmarkRecipe.Supports(p);
         DataRecipePanel.IsEnabled = supported;
+        DataRecipePanel.Visibility = supported ? Visibility.Visible : Visibility.Collapsed;
         DetailPolicy.IsEnabled = p?.Manageable == true;
         DataRecipeStatus.Text = supported ? "Available recipe: Chrome bookmarks. Back up or choose a file, then explicitly select whether to restore it. Registry and shortcut recipes are not supported." : "No tested application-data recipe exists for this application. Back up settings using the vendor's documented method.";
         ShowDataLocations();

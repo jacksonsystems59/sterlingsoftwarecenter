@@ -24,7 +24,8 @@ public partial class App : Application
         base.OnStartup(e); ShutdownMode = ShutdownMode.OnExplicitShutdown;
         bool startupTest = e.Args.Length == 2 && e.Args[0] == "--startup-test";
         bool uiTest = e.Args.Length == 2 && e.Args[0] == "--ui-tests";
-        SmokeMode = startupTest || uiTest || e.Args.Length == 2 && e.Args[0] == "--smoke-test";
+        bool liveUi = e.Args.Length == 2 && e.Args[0] == "--live-ui-tests";
+        SmokeMode = startupTest || uiTest || liveUi || e.Args.Length == 2 && e.Args[0] == "--smoke-test";
         if (!SmokeMode)
         {
             instance = new Mutex(true, "Local\\SterlingSoftwareCentre", out bool first);
@@ -34,12 +35,13 @@ public partial class App : Application
         try
         {
             if (uiTest) { await WindowWorkflowChecks.Run(e.Args[1]); Shutdown(0); return; }
+            if (liveUi) { var live = new MainWindow(); MainWindow = live; live.Show(); await live.RunLiveChecks(e.Args[1]); live.Close(); Shutdown(0); return; }
             MainWindow window;
             double splashSeconds = 0;
             if (!SmokeMode || startupTest)
             {
                 var splash = new SplashWindow(); MainWindow = splash; splash.Show();
-                var timer = Stopwatch.StartNew(); var minimumDisplay = Task.Delay(TimeSpan.FromSeconds(4));
+                var timer = Stopwatch.StartNew(); var minimumDisplay = Task.Delay(TimeSpan.FromSeconds(5));
                 await Dispatcher.InvokeAsync(() => splash.UpdateLayout(), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
                 if (startupTest) Render(splash, e.Args[1] + ".splash.png");
                 window = new MainWindow();
@@ -56,7 +58,7 @@ public partial class App : Application
             {
                 Render(window, e.Args[1]);
                 Storage.Save(e.Args[1] + ".json", new { WpfRender = true, SplashSeconds = splashSeconds, Framework = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription });
-                if (startupTest && splashSeconds < 3.9) throw new InvalidOperationException("Splash display was shorter than four seconds.");
+                if (startupTest && splashSeconds < 4.9) throw new InvalidOperationException("Splash display was shorter than five seconds.");
                 Shutdown(0);
             }
         }

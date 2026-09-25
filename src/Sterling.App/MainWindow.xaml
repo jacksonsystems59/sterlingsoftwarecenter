@@ -45,8 +45,8 @@
     <Grid Margin="18"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
      <TextBlock Style="{StaticResource Note}" Text="Provider match means the provider can currently manage this application; it does not prove how it was originally installed. Review unknown items and multiple instances manually."/>
      <WrapPanel Grid.Row="1">
-      <Button Content="Refresh inventory" Click="Inventory_Click"/><Button Content="Tick all" Click="SelectInventory_Click"/><Button Content="Clear ticks" Click="ClearInventory_Click"/>
-      <Button Click="Capture_Click"><StackPanel Orientation="Horizontal"><Image Source="{StaticResource Icon.capture}" Style="{StaticResource ActionIcon}"/><TextBlock Text="Capture this PC"/></StackPanel></Button><Button Content="Save ticked capture…" Click="SaveCapture_Click"/>
+      <Button Content="Refresh inventory" Click="Inventory_Click"/><Button Content="Select all" Click="SelectInventory_Click"/><Button Content="Clear ticks" Click="ClearInventory_Click"/>
+      <Button Click="Capture_Click"><StackPanel Orientation="Horizontal"><Image Source="{StaticResource Icon.capture}" Style="{StaticResource ActionIcon}"/><TextBlock Text="Capture this PC"/></StackPanel></Button><Button Content="Save capture…" Click="SaveCapture_Click"/>
      </WrapPanel>
      <DataGrid x:Name="InventoryGrid" Grid.Row="2"><DataGrid.Columns>
       <DataGridTemplateColumn Header="Select" Width="55"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsChecked="{Binding Selected, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" VerticalAlignment="Center"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
@@ -80,7 +80,7 @@
       <DataGridComboBoxColumn x:Name="RestorePolicy" Header="Policy" SelectedItemBinding="{Binding VersionPolicy, UpdateSourceTrigger=PropertyChanged}" Width="105"/>
       <DataGridTextColumn Header="Readiness" Binding="{Binding Disposition}" Width="210" IsReadOnly="True"/>
      </DataGrid.Columns></DataGrid><TextBlock Grid.Row="2" Text="Open a capture or choose Capture this PC to begin." HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" Foreground="#526C7E" TextWrapping="Wrap" Margin="20"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Items.Count, ElementName=RestoreGrid}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
-     <WrapPanel Grid.Row="3" Margin="0,12,0,0"><Button Content="Review bulk restore" Click="ReviewRestore_Click" Style="{StaticResource Primary}"/><Button Content="Check availability" Click="Availability_Click"/><Button Content="Add to deployment" Click="RestoreQueue_Click"/><Button Content="Save ticked capture…" Click="SaveCapture_Click"/><Button Click="RestoreUninstall_Click"><StackPanel Orientation="Horizontal"><Image Source="{StaticResource Icon.uninstall}" Style="{StaticResource ActionIcon}"/><TextBlock Text="Uninstall ticked…"/></StackPanel></Button><Button Content="Replace with captured…" Click="Replace_Click"/></WrapPanel>
+     <WrapPanel Grid.Row="3" Margin="0,12,0,0"><Button Content="Review bulk restore" Click="ReviewRestore_Click" Style="{StaticResource Primary}"/><Button Content="Check availability" Click="Availability_Click"/><Button Content="Add to deployment" Click="RestoreQueue_Click"/><Button Content="Save capture…" Click="SaveCapture_Click"/><Button Click="RestoreUninstall_Click"><StackPanel Orientation="Horizontal"><Image Source="{StaticResource Icon.uninstall}" Style="{StaticResource ActionIcon}"/><TextBlock Text="Uninstall ticked…"/></StackPanel></Button><Button Content="Replace with captured…" Click="Replace_Click"/></WrapPanel>
      <Border Grid.Row="4" Background="#F0F8F8" BorderBrush="#C3E3DE" BorderThickness="1" CornerRadius="10" Padding="16" Margin="0,8,0,0">
       <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="1.25*"/></Grid.ColumnDefinitions>
        <StackPanel Margin="0,0,18,0"><TextBlock x:Name="DataAppTitle" Text="Select an application for its details" FontSize="18" FontWeight="SemiBold" Foreground="#153B53"/><TextBlock x:Name="DataAppSummary" Style="{StaticResource Note}" Margin="0,6,0,10" Text="Software and application data are separate choices. No data recipe is selected by default."/>
@@ -145,7 +145,3 @@
   </TabControl>
  </DockPanel>
 </Window>
-
-
-
-

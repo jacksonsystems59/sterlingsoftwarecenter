@@ -9,7 +9,7 @@ public sealed class AppUpdates
 {
     public const string Repository = "jacksonsystems59/sterlingsoftwarecenter";
     static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(15) };
-    static AppUpdates() { Http.DefaultRequestHeaders.UserAgent.ParseAdd("SterlingSoftwareCentre/0.1.1"); }
+    static AppUpdates() { Http.DefaultRequestHeaders.UserAgent.ParseAdd("SterlingSoftwareCentre/0.1.2"); }
     public async Task<AppRelease?> Check(Version current)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));

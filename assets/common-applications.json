@@ -1,0 +1,8 @@
+[
+ {"Group":"Browsers","Name":"Google Chrome","Id":"Google.Chrome","Scope":"machine","Manifest":"g/Google/Chrome"},
+ {"Group":"Browsers","Name":"Mozilla Firefox","Id":"Mozilla.Firefox","Scope":"machine","Manifest":"m/Mozilla/Firefox"},
+ {"Group":"Browsers","Name":"Brave","Id":"Brave.Brave","Scope":"machine","Manifest":"b/Brave/Brave"},
+ {"Group":"Browsers","Name":"Microsoft Edge","Id":"Microsoft.Edge","Scope":"machine","Reason":"Windows may already supply Edge; an existing installation is handled by the normal provider policy.","Manifest":"m/Microsoft/Edge"},
+ {"Group":"Media","Name":"VLC media player","Id":"VideoLAN.VLC","Scope":"machine","Manifest":"v/VideoLAN/VLC"},
+ {"Group":"Office","Name":"Microsoft 365 Apps for enterprise","Id":"Microsoft.Office","Scope":"machine","Enabled":false,"Reason":"Unavailable: the manifest uses a remotely hosted Office configuration; unattended enterprise deployment and tenant-specific edition/licensing have not been validated. Use your approved Office Deployment Tool configuration.","Manifest":"m/Microsoft/Office"}
+]

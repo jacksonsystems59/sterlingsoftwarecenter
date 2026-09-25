@@ -109,6 +109,7 @@ await new JobEngine([fake], _ => {}, Path.Combine(temp, "step-job"), dataRunner)
 Check(dataRunner.Count == 0 && dependencyJobs.All(j => j.Status == "Failed"), "data step never runs after failed software prerequisite");
 fake.Fail.Clear(); await new JobEngine([fake], _ => {}, Path.Combine(temp, "step-job"), dataRunner).Run(dependencyJobs);
 Check(dataRunner.Count == 1 && dependencyJobs.All(j => j.Status == "Succeeded"), "retry recovers failed installation then runs dependent data once");
+await V012Checks.Run(temp, Check);
 if (args.Contains("--live-winget"))
 {
     var live = new WingetProvider(new ProcessRunner(), new Settings());
