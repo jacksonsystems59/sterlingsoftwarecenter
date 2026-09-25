@@ -1,0 +1,131 @@
+<Window x:Class="Sterling.App.MainWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="Sterling Software Centre" Width="1280" Height="850" MinWidth="1000" MinHeight="680" Background="#F3F6FA" FontFamily="Segoe UI" FontSize="14">
+ <Window.Resources>
+  <Style TargetType="Button"><Setter Property="Padding" Value="14,8"/><Setter Property="Margin" Value="0,0,8,8"/><Setter Property="Background" Value="#E5EDF7"/><Setter Property="BorderBrush" Value="#B5C6DB"/><Setter Property="Foreground" Value="#142C49"/><Setter Property="Cursor" Value="Hand"/></Style>
+  <Style TargetType="TextBox"><Setter Property="Padding" Value="8,6"/><Setter Property="Margin" Value="0,0,8,8"/><Setter Property="VerticalContentAlignment" Value="Center"/></Style>
+  <Style TargetType="ComboBox"><Setter Property="Padding" Value="8,6"/><Setter Property="Margin" Value="0,0,8,8"/></Style>
+  <Style TargetType="DataGrid"><Setter Property="AutoGenerateColumns" Value="False"/><Setter Property="CanUserAddRows" Value="False"/><Setter Property="CanUserDeleteRows" Value="False"/><Setter Property="HeadersVisibility" Value="Column"/><Setter Property="GridLinesVisibility" Value="Horizontal"/><Setter Property="HorizontalGridLinesBrush" Value="#E6EBF2"/><Setter Property="RowHeight" Value="34"/><Setter Property="AlternatingRowBackground" Value="#F7F9FC"/><Setter Property="BorderBrush" Value="#D5DFEA"/><Setter Property="SelectionMode" Value="Extended"/></Style>
+  <Style TargetType="TabItem"><Setter Property="Padding" Value="18,10"/></Style>
+  <Style x:Key="Note" TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="Foreground" Value="#52647A"/><Setter Property="Margin" Value="0,0,0,14"/></Style>
+ </Window.Resources>
+ <DockPanel>
+  <Border DockPanel.Dock="Top" Background="#102B4C" Padding="26,18">
+   <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+    <StackPanel><TextBlock Text="STERLING  /  SOFTWARE CENTRE" Foreground="White" FontSize="24" FontWeight="SemiBold"/><TextBlock x:Name="Subtitle" Foreground="#B8CCE4" Margin="0,7,0,0"/></StackPanel>
+    <TextBlock x:Name="VersionLabel" Grid.Column="1" Foreground="White" VerticalAlignment="Center"/>
+   </Grid>
+  </Border>
+  <Border DockPanel.Dock="Bottom" Background="#E2EAF3" Padding="20,10"><TextBlock x:Name="StatusText" Text="Ready" TextWrapping="Wrap"/></Border>
+  <TabControl x:Name="Tabs" Margin="20" Background="White">
+   <TabItem Header="Find &amp; deploy">
+    <Grid Margin="18"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="180"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+     <TextBlock Style="{StaticResource Note}" Text="Search approved sources and tick packages. Your selection stays here across searches. Review scope and version before starting."/>
+     <DockPanel Grid.Row="1">
+      <Button DockPanel.Dock="Right" Content="Search" Click="Search_Click"/>
+      <ComboBox x:Name="ProviderBox" DockPanel.Dock="Left" Width="150" SelectedIndex="0"><ComboBoxItem Content="winget"/><ComboBoxItem Content="chocolatey"/></ComboBox>
+      <TextBox x:Name="SearchBox" KeyDown="Search_KeyDown" ToolTip="Search by name or exact package ID"/>
+     </DockPanel>
+     <DataGrid x:Name="SearchGrid" Grid.Row="2"><DataGrid.Columns>
+      <DataGridTemplateColumn Header="Select" Width="60"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsChecked="{Binding Selected, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" VerticalAlignment="Center"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+      <DataGridTextColumn Header="Application" Binding="{Binding Name}" Width="*" IsReadOnly="True"/>
+      <DataGridTextColumn Header="Exact package ID" Binding="{Binding Id}" Width="280" IsReadOnly="True"/>
+      <DataGridTextColumn Header="Version" Binding="{Binding Version}" Width="140" IsReadOnly="True"/>
+     </DataGrid.Columns></DataGrid>
+     <TextBlock Grid.Row="3" Text="DEPLOYMENT SELECTION" FontWeight="SemiBold" Margin="0,16,0,8"/>
+     <DataGrid x:Name="BasketGrid" Grid.Row="4"><DataGrid.Columns>
+      <DataGridTextColumn Header="Provider" Binding="{Binding Provider}" IsReadOnly="True" Width="100"/>
+      <DataGridTextColumn Header="Application / ID" Binding="{Binding Id}" IsReadOnly="True" Width="*"/>
+      <DataGridComboBoxColumn Header="Scope" SelectedItemBinding="{Binding Scope, UpdateSourceTrigger=PropertyChanged}" x:Name="BasketScope" Width="115"/>
+      <DataGridComboBoxColumn Header="Version policy" SelectedItemBinding="{Binding VersionPolicy, UpdateSourceTrigger=PropertyChanged}" x:Name="BasketPolicy" Width="135"/>
+      <DataGridTextColumn Header="Exact version (Captured)" Binding="{Binding Version, UpdateSourceTrigger=PropertyChanged}" Width="190"/>
+     </DataGrid.Columns></DataGrid>
+     <WrapPanel Grid.Row="5" Margin="0,12,0,0">
+      <Button Content="Install selection" Click="Install_Click" Background="#1768AB" Foreground="White"/>
+      <Button Content="Remove highlighted" Click="RemoveBasket_Click"/>
+      <Button Content="Clear selection" Click="ClearBasket_Click"/>
+      <Button Content="Save deployment list…" Click="SaveList_Click"/>
+     </WrapPanel>
+    </Grid>
+   </TabItem>
+   <TabItem Header="Installed &amp; updates">
+    <Grid Margin="18"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+     <TextBlock Style="{StaticResource Note}" Text="Provider match means the provider can currently manage this application; it does not prove how it was originally installed. Review unknown items and multiple instances manually."/>
+     <WrapPanel Grid.Row="1">
+      <Button Content="Refresh inventory" Click="Inventory_Click"/><Button Content="Tick all" Click="SelectInventory_Click"/><Button Content="Clear ticks" Click="ClearInventory_Click"/>
+      <Button Content="Capture this PC" Click="Capture_Click"/><Button Content="Save ticked capture…" Click="SaveCapture_Click"/>
+     </WrapPanel>
+     <DataGrid x:Name="InventoryGrid" Grid.Row="2"><DataGrid.Columns>
+      <DataGridTemplateColumn Header="Select" Width="55"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsChecked="{Binding Selected, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" VerticalAlignment="Center"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+      <DataGridTextColumn Header="Application" Binding="{Binding Name}" Width="*" IsReadOnly="True"/>
+      <DataGridTextColumn Header="ID" Binding="{Binding Id}" Width="185" IsReadOnly="True"/>
+      <DataGridTextColumn Header="Provider" Binding="{Binding Provider}" Width="90" IsReadOnly="True"/>
+      <DataGridTextColumn Header="Installed" Binding="{Binding Version}" Width="110" IsReadOnly="True"/>
+      <DataGridTextColumn Header="Available" Binding="{Binding Available}" Width="110" IsReadOnly="True"/>
+      <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="80" IsReadOnly="True"/>
+      <DataGridTextColumn Header="Review / policy" Binding="{Binding State}" Width="190" IsReadOnly="True"/>
+     </DataGrid.Columns></DataGrid>
+     <WrapPanel Grid.Row="3" Margin="0,12,0,0">
+      <Button Content="Update ticked" Click="UpdateSelected_Click"/><Button Content="Update all eligible" Click="UpdateAll_Click"/>
+      <Button Content="Uninstall ticked…" Click="Uninstall_Click"/><Button Content="Exclude ticked" Click="Exclude_Click"/><Button Content="Remove exclusions" Click="Unexclude_Click"/>
+     </WrapPanel>
+    </Grid>
+   </TabItem>
+   <TabItem Header="Lists &amp; restore">
+    <Grid Margin="18"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+     <StackPanel><TextBlock x:Name="BundleLabel" Text="Open a deployment list or a capture bundle" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,10"/><TextBlock Style="{StaticResource Note}" Text="Review every item. Captured requests the exact saved version; unavailable versions fail without substitution. Newest requests the current version. Scope and policy can be overridden per application. Installation files are downloaded from the provider."/></StackPanel>
+     <WrapPanel Grid.Row="1">
+      <Button Content="Open bundle / list…" Click="OpenBundle_Click"/><Button Content="Standard workstation" Click="Preset_Click"/>
+      <Button Content="Tick ready items" Click="SelectRestore_Click"/><Button Content="Use captured versions" Click="CapturedPolicy_Click"/><Button Content="Use newest versions" Click="NewestPolicy_Click"/>
+     </WrapPanel>
+     <DataGrid x:Name="RestoreGrid" Grid.Row="2"><DataGrid.Columns>
+      <DataGridTemplateColumn Header="Select" Width="55"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsChecked="{Binding Selected, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" VerticalAlignment="Center"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+      <DataGridTextColumn Header="Application" Binding="{Binding Name}" Width="*" IsReadOnly="True"/>
+      <DataGridTextColumn Header="Provider / ID" Binding="{Binding Key}" Width="240" IsReadOnly="True"/>
+      <DataGridTextColumn Header="Captured version" Binding="{Binding Version}" Width="125" IsReadOnly="True"/>
+      <DataGridComboBoxColumn x:Name="RestoreScope" Header="Scope" SelectedItemBinding="{Binding Scope, UpdateSourceTrigger=PropertyChanged}" Width="105"/>
+      <DataGridComboBoxColumn x:Name="RestorePolicy" Header="Policy" SelectedItemBinding="{Binding VersionPolicy, UpdateSourceTrigger=PropertyChanged}" Width="105"/>
+      <DataGridTextColumn Header="Readiness" Binding="{Binding Disposition}" Width="210" IsReadOnly="True"/>
+     </DataGrid.Columns></DataGrid>
+     <WrapPanel Grid.Row="3" Margin="0,12,0,0"><Button Content="Check availability" Click="Availability_Click"/><Button Content="Add ticked to deployment" Click="RestoreQueue_Click"/><Button Content="Uninstall ticked…" Click="RestoreUninstall_Click"/><Button Content="Replace with captured version…" Click="Replace_Click"/></WrapPanel>
+    </Grid>
+   </TabItem>
+   <TabItem Header="Jobs &amp; logs">
+    <Grid Margin="18"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="220"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+     <WrapPanel><Button Content="Retry failed items" Click="Retry_Click"/><Button Content="Stop after current package" Click="Stop_Click"/><Button Content="Open log folder" Click="Logs_Click"/></WrapPanel>
+     <DataGrid x:Name="JobsGrid" Grid.Row="1" IsReadOnly="True"><DataGrid.Columns>
+      <DataGridTextColumn Header="Package" Binding="{Binding Package.Id}" Width="230"/><DataGridTextColumn Header="Operation" Binding="{Binding Operation}" Width="110"/><DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="130"/><DataGridCheckBoxColumn Header="Restart" Binding="{Binding RestartRequired}" Width="65"/><DataGridTextColumn Header="Result" Binding="{Binding Detail}" Width="*"/>
+     </DataGrid.Columns></DataGrid>
+     <TextBlock Grid.Row="2" Text="OPERATION LOG" FontWeight="SemiBold" Margin="0,16,0,8"/>
+     <TextBox x:Name="LogBox" Grid.Row="3" IsReadOnly="True" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Background="#11243A" Foreground="#D3E3F5" Margin="0"/>
+    </Grid>
+   </TabItem>
+   <TabItem Header="Settings &amp; help">
+    <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="22" MaxWidth="950" HorizontalAlignment="Left">
+     <TextBlock Text="Package providers" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,12"/>
+     <TextBlock x:Name="ProvidersStatus" Style="{StaticResource Note}"/>
+     <WrapPanel><Button Content="Detect providers" Click="Detect_Click"/><Button Content="WinGet setup guide" Click="WingetHelp_Click"/><Button Content="Chocolatey organisation guide" Click="ChocoHelp_Click"/></WrapPanel>
+     <TextBlock Text="Chocolatey internal/customer HTTPS repository" Margin="0,12,0,6"/>
+     <TextBox x:Name="ChocoSourceBox" MinWidth="600"/>
+     <TextBlock Style="{StaticResource Note}" Text="No package manager is installed automatically. Chocolatey requires an authorised repository and an administrator-managed installation. Public Community Repository deployment is blocked; ensure any proxy or cache is licensed and compliant."/>
+     <CheckBox x:Name="AgreementBox" Content="I have reviewed and accept the WinGet source agreements for this PC" Margin="0,4,0,12"/>
+     <CheckBox x:Name="AppUpdateBox" Content="Check GitHub for Sterling updates when the application opens (notify only)" Margin="0,0,0,12"/>
+     <Button Content="Save settings" Click="Settings_Click" HorizontalAlignment="Left"/>
+     <Separator Margin="0,12"/>
+     <TextBlock Text="Sterling application updates" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,12"/>
+     <TextBlock x:Name="AppUpdateStatus" Style="{StaticResource Note}" Text="Check for new stable releases. Download and installation always require your confirmation."/>
+     <WrapPanel><Button Content="Check for app update" Click="CheckAppUpdate_Click"/><Button x:Name="ApplyUpdateButton" Content="Download &amp; apply app update…" Click="ApplyAppUpdate_Click" IsEnabled="False"/><Button Content="GitHub releases" Click="Releases_Click"/></WrapPanel>
+     <TextBlock Style="{StaticResource Note}" Text="The helper verifies SHA-256, closes Sterling, backs up the current binaries and applies the release. It restores changed files if copying fails. User settings and job logs remain in LocalAppData. Self-update is unavailable while elevated or inside protected/symlinked folders."/>
+     <Separator Margin="0,12"/>
+     <TextBlock Text="Application data · Chrome bookmarks" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,12"/>
+     <TextBlock Style="{StaticResource Note}" Text="Reviewed recipe: the current Windows user's Chrome bookmarks only. No passwords, cookies or browser secrets. Close Chrome first. Choose Default or a Profile folder. Restore replaces the Bookmarks file after preserving a timestamped backup; it does not merge. These are separate, explicit steps after software installation."/>
+     <WrapPanel><Button Content="Back up Chrome bookmarks…" Click="BackupBookmarks_Click"/><Button Content="Restore Chrome bookmarks…" Click="RestoreBookmarks_Click"/></WrapPanel>
+     <Separator Margin="0,12"/>
+     <TextBlock Text="Release scope &amp; operating notes" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,12"/>
+     <TextBlock Style="{StaticResource Note}" Text="This first release manages the PC where it runs. Agent installation, controller enrolment, LAN push deployment, scheduled policies, generic registry imports and ordered deployment recipes are not available. No background service or network listener is installed. WinGet table parsing currently requires English output. Use one software policy owner per application; exclude applications controlled by NinjaOne. Run as the intended Windows user; package installers may request elevation. Capture bundles contain inventory, not installers or application licences."/>
+     <Button Content="Open README" Click="Readme_Click" HorizontalAlignment="Left"/>
+    </StackPanel></ScrollViewer>
+   </TabItem>
+  </TabControl>
+ </DockPanel>
+</Window>

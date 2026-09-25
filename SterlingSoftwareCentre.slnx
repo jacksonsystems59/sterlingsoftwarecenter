@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Sterling.App/Sterling.App.csproj" />
+    <Project Path="src/Sterling.Core/Sterling.Core.csproj" />
+    <Project Path="src/Sterling.Updater/Sterling.Updater.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Sterling.Tests/Sterling.Tests.csproj" />
+  </Folder>
+</Solution>
